@@ -26,6 +26,8 @@ let routes = createBrowserRouter(
       />
       <Route path="/test" lazy={() => import("./Apps/Test")} />
       <Route path="/code-iterate" lazy={() => import("./Apps/CodeIterate")} />
+      <Route path="/code-chat" lazy={() => import("./Apps/ChatCode")} />
+
       <Route path="/about" element={<div>About</div>} />
     </>
   )
