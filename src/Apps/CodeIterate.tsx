@@ -108,7 +108,7 @@ function CodeIterate() {
           </InputGroup>
         </GridItem>
         <GridItem ref={contentItemref} area="code" background="orange.300">
-          <SandpackProvider template="react" files={files} customSetup={{dependencies}} >
+          <SandpackProvider template="vanilla" customSetup={{dependencies}} >
             {/* @ts-ignore */}
             <SandpackLayout style={{ "--sp-layout-height": contentItemHeight }}>
               <SandpackFileExplorer />

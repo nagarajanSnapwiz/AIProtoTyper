@@ -32,6 +32,9 @@ dependencies:
   immer:
     specifier: ^10.0.3
     version: 10.0.3
+  jsstore:
+    specifier: ^4.7.2
+    version: 4.7.2
   lodash.omit:
     specifier: ^4.5.0
     version: 4.5.0
@@ -41,9 +44,18 @@ dependencies:
   marked:
     specifier: ^11.1.1
     version: 11.1.1
+  mdast-util-from-markdown:
+    specifier: ^2.0.0
+    version: 2.0.0
+  mdast-util-to-markdown:
+    specifier: ^2.1.0
+    version: 2.1.0
   openai:
     specifier: ^4.22.1
     version: 4.22.1
+  path-normalize:
+    specifier: ^6.0.13
+    version: 6.0.13
   react:
     specifier: ^18.2.0
     version: 18.2.0
@@ -3378,6 +3390,10 @@ packages:
     resolution: {integrity: sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw==}
     dev: true
 
+  /jsstore@4.7.2:
+    resolution: {integrity: sha512-bbYnbvhoJYYlNT9jqGMuzl6hH0uDOGRtGi6fp0gDJwo/XATZa2BBaFRGh6bL7Nx7F3ry3oiNRpVTovHFwtnEWA==}
+    dev: false
+
   /keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
     dependencies:
@@ -3942,6 +3958,11 @@ packages:
     resolution: {integrity: sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==}
     engines: {node: '>=8'}
     dev: true
+
+  /path-normalize@6.0.13:
+    resolution: {integrity: sha512-PfC1Pc+IEhI77UEN731pj2nMs9gHAV36IA6IW6VdXWjoQesf+jtO9hdMUqTRS6mwR0T5rmyUrQzd5vw0VwL1Lw==}
+    engines: {node: '>=16.0.0'}
+    dev: false
 
   /path-parse@1.0.7:
     resolution: {integrity: sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw==}

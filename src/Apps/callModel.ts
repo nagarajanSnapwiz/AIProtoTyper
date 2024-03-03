@@ -28,7 +28,7 @@ type CallParams = {
 
 type CallParamsStreaming = Omit<CallParams,"text"> & {
   setState: (v: string,id: string) => void;
-  onComplete?: () => void;
+  onComplete?: (c: string) => void;
   text?: string;
 };
 
@@ -124,6 +124,6 @@ export async function callModelWithStreaming({
   }
   if (onComplete) {
     (window as any).__lastContent = content;
-    onComplete();
+    onComplete(content);
   }
 }
