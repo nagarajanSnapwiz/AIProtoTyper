@@ -39,6 +39,7 @@ import { toMarkdown } from "mdast-util-to-markdown";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import OpenAI from "openai";
 import { useResizeObserver } from "./useResizeObserver";
+import * as LocalDb from "./LocalDb";
 
 type ChatItemProps = {
   system?: Boolean;
@@ -125,7 +126,7 @@ const generateFullInitialPrompt = (text: string) => {
   if (!text.trim().endsWith(".")) {
     text = `${text}.`;
   }
-  return `Generate full code for a web app based on the following request: ${text} I don't want a basic example. I need full implementation. I need following rules must be followed while generating the code. First line of the code in each code file should be a comment specifying relative path of the file. I need contents of each code file should formatted within a separate fenced code blocks. The code must be in Javascript language. Prefer using React.js when only necessary. If its easier, use plain javascript. Definitely provide package.json without any comments and scripts attribute. I am using parcel bundler to run. ${templateDescriptions} If I ask for any changes after you provided me initial code,its VERY IMPORTANT that you MUST PROVIDE THE FULL CODE OF THE FILE, ONLY WHICH ARE GETTING CHANGED, WITH UPDATED CODE instead of referring the existing code with comments. DO NOT provide the code unless the content is changing. When suggesting additional dependencies, definitely provide full package.json again with updated dependencies. Because nobody is going to read the comments and copy paste the previous code, since this is an automated system.`;
+  return `Generate full code for a web app based on the following request: ${text} I don't want a basic example. I need full implementation. I need following rules must be followed while generating the code. First line of the code in each code file should be a comment specifying relative path of the file. I need contents of each code file should formatted within a separate fenced code blocks. The code must be in Javascript language. Prefer using React.js when its suitable. If its easier and very simple, use plain javascript. Definitely provide package.json without any comments and scripts attribute. I am using parcel bundler to run. ${templateDescriptions} If I ask for any changes after you provided me initial code,its VERY IMPORTANT that you MUST PROVIDE THE FULL CODE OF THE FILE, ONLY WHICH ARE GETTING CHANGED, WITH UPDATED CODE instead of referring the existing code with comments. DO NOT provide the code unless the content is changing. When suggesting additional dependencies, definitely provide full package.json again with updated dependencies. Because nobody is going to read the comments and copy paste the previous code, since this is an automated system.`;
 };
 
 function CustomSandpackBehaviour({
@@ -155,12 +156,18 @@ function CustomSandpackBehaviour({
   useEffect(() => {
     const { current: codes } = codesRef;
     const findIndexForMessageToChange = () => {
+      console.log('messages',messages,'active code',codes[activeFile]);
       for (let i = messages.length - 1; i >= 0; i--) {
         const message = messages[i];
         const parsed = fromMarkdown(message.content as string);
         const index = parsed.children?.findIndex((node: any) => {
           if (node.type === "code" && node.value === codes[activeFile]) {
             return true;
+          } else{
+            if(node?.value?.startsWith("// ./App.js")){
+              console.log('node value',node.value);
+              console.log('active value',codes[activeFile]);
+            }
           }
         });
         if (index > -1) {
@@ -174,9 +181,11 @@ function CustomSandpackBehaviour({
     if (codes[activeFile] && activeCode && codes[activeFile] !== activeCode) {
       const [messageIndex, oldIndexOfTheCode, parsed] =
         findIndexForMessageToChange();
+      console.log('index props',{messageIndex,oldIndexOfTheCode,parsed});
       if (oldIndexOfTheCode > -1 && messageIndex > -1 && parsed) {
         //@ts-ignore
         parsed.children[oldIndexOfTheCode].value = activeCode;
+
         setMessages((messages) => {
           let newMessages = [...messages];
 
@@ -184,12 +193,22 @@ function CustomSandpackBehaviour({
             const messageToUpdate = newMessages[messageIndex];
 
             messageToUpdate.content = toMarkdown(parsed);
+            LocalDb.updateMessage(messageToUpdate.id!, {
+              content: toMarkdown(parsed),
+            });
           }
 
           return newMessages;
         });
 
         codesRef.current = { ...codesRef.current, [activeFile]: activeCode };
+        if (sessionStorage[SESSION_ID_KEY]) {
+          LocalDb.setCodesForSession(
+            codesRef.current,
+            sessionStorage[SESSION_ID_KEY]
+          );
+        }
+
         setActiveFile(activeFile);
       }
     }
@@ -210,6 +229,8 @@ function CustomSandpackBehaviour({
   return null;
 }
 
+const SESSION_ID_KEY = "CHAT_CODE_SESSION_ID";
+
 function ChatCode() {
   const [currentPrompt, setCurrentPrompt] = useState("");
   const [initialprompt, setInitialPrompt] = useState("");
@@ -226,6 +247,21 @@ function ChatCode() {
     useResizeObserver();
   const lastParsedMarkDownRef = useRef<any>(null);
 
+  useEffect(() => {
+    const sessionId = sessionStorage[SESSION_ID_KEY];
+    if (sessionId) {
+      LocalDb.getSession(sessionId).then((result) => {
+        if (result) {
+          const { initialPrompt, messages, codes } = result;
+          setInitialPrompt(initialPrompt);
+          setMessages(messages);
+          setCodes(codes);
+          codesRef.current = codes;
+        }
+      });
+    }
+  }, []);
+
   const scrollToBottom = () => {
     setTimeout(() => {
       if (srcollContainer.current) {
@@ -236,16 +272,24 @@ function ChatCode() {
   };
 
   // console.log('messages',messages);
-  const submitText = (text: string) => {
+  const submitText = async (text: string) => {
     setGenerating(true);
     let messagesToSend = [...messages];
     if (messages.length === 0) {
       setInitialPrompt(text);
+
+      const sessionId = await LocalDb.addSession(text);
+      sessionStorage[SESSION_ID_KEY] = sessionId;
+
       messagesToSend = [
         { role: "user", content: generateFullInitialPrompt(text) },
       ];
+      await LocalDb.addMessage(messagesToSend[0], sessionId);
     } else {
-      messagesToSend = [...messagesToSend, { role: "user", content: text }];
+      const sessionId = sessionStorage[SESSION_ID_KEY];
+      const message = { role: "user", content: text } as const;
+      messagesToSend = [...messagesToSend, message];
+      await LocalDb.addMessage(message, sessionId);
     }
     setMessages(messagesToSend);
     scrollToBottom();
@@ -263,7 +307,13 @@ function ChatCode() {
 
         scrollToBottom();
       },
-      onComplete: (fullMessage) => {
+      onComplete: async (fullMessage, id) => {
+        const sessionId = sessionStorage[SESSION_ID_KEY];
+        await LocalDb.addMessage(
+          { role: "assistant", content: fullMessage, id },
+          sessionId
+        );
+
         setGenerating(false);
         setCurrentPrompt("");
         const { codeBlocks: codeFiles, parsedMarkdown } =
@@ -283,6 +333,8 @@ function ChatCode() {
           ...codesRef.current,
           ...newCodes,
         }));
+
+        await LocalDb.setCodesForSession({ ...codesRef.current }, sessionId);
       },
     });
   };
@@ -319,13 +371,14 @@ function ChatCode() {
             justifyContent="flex-end"
           >
             <ChatItem
+              key="system-first-message"
               system
               text="Describe the web app you need me to write. I will try my best"
             />
             {initialprompt ? <ChatItem text={initialprompt} /> : null}
-            {messages.slice(1).map((msg) => (
+            {messages.slice(1).map((msg, index) => (
               <ChatItem
-                key={msg.id}
+                key={msg.id || index}
                 text={msg.content as string}
                 system={msg.role === "assistant" || msg.role === "system"}
               />

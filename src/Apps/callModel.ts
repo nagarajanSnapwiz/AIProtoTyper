@@ -28,7 +28,7 @@ type CallParams = {
 
 type CallParamsStreaming = Omit<CallParams,"text"> & {
   setState: (v: string,id: string) => void;
-  onComplete?: (c: string) => void;
+  onComplete?: (c: string, id: string) => void;
   text?: string;
 };
 
@@ -115,15 +115,17 @@ export async function callModelWithStreaming({
     stream: true,
   });
   let content = "";
+  let messageId = null;
   for await (const chunk of completion) {
     content += chunk.choices[0]?.delta?.content || "";
     if(chunk.choices[0].finish_reason){
       console.log("finish reason",chunk.choices[0].finish_reason);
     }
+    messageId = chunk.id;
     setState(content,chunk.id);
   }
   if (onComplete) {
     (window as any).__lastContent = content;
-    onComplete(content);
+    onComplete(content, messageId!);
   }
 }
