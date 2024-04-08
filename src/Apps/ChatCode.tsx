@@ -1,18 +1,10 @@
-import {
-  memo,
-  useState,
-  useRef,
-  useMemo,
-  useEffect,
-  useImperativeHandle,
-} from "react";
+import { memo, useState, useRef, useMemo, useEffect } from "react";
 import omit from "lodash.omit";
 import {
   Container,
   Grid,
   GridItem,
   Textarea,
-  Input,
   Button,
   InputGroup,
   InputRightElement,
@@ -343,6 +335,10 @@ function ChatCode() {
     containerStyle: { marginTop: 100 },
   });
 
+  const codesForSandPack = useMemo(()=>{
+    return codesWithPackageJson(codes);
+  },[codes])
+
   // console.log('messages',messages);
   const submitText = async (text: string) => {
     setGenerating(true);
@@ -539,7 +535,7 @@ function ChatCode() {
                 />
                 <SandpackProvider
                   theme="dark"
-                  files={codesWithPackageJson(codes)}
+                  files={codesForSandPack}
                   template="vanilla"
                 >
                   <SandpackLayout
