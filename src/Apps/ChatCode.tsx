@@ -21,6 +21,11 @@ import {
   Heading,
   Avatar,
   Text,
+  IconButton,
+  ButtonGroup,
+  useDisclosure,
+  useToast,
+  Select,
 } from "@chakra-ui/react";
 import ReactMarkdown from "react-markdown";
 import {
@@ -30,6 +35,7 @@ import {
   SandpackCodeEditor,
   useSandpack,
   useActiveCode,
+  SandpackFileExplorer,
 } from "@codesandbox/sandpack-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { a11yDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -40,6 +46,11 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 import OpenAI from "openai";
 import { useResizeObserver } from "./useResizeObserver";
 import * as LocalDb from "./LocalDb";
+import { ExpandLeft, ExpandRight, Menu, NewPaper, Key } from "../Icons";
+import { OlderSessionsDrawer } from "./OlderSessionsDrawer";
+import { MODELS, Models } from "./constants";
+import { AcceptOpenAIKeyModal } from "./AcceptOpenAIKeyModal";
+import { KeyUpdateDialog } from "./KeyUpdateDialog";
 
 type ChatItemProps = {
   system?: Boolean;
@@ -54,6 +65,8 @@ const templateDescriptions = `I have following setup already. I have following f
  *
  * TODOS
  */
+
+const { SESSION_ID_KEY } = LocalDb;
 
 function SafeMarkdown({ text }: { text: string }) {
   return (
@@ -76,9 +89,15 @@ function SafeMarkdown({ text }: { text: string }) {
               style={a11yDark}
             />
           ) : (
-            <code {...rest} className={className}>
-              {children}
-            </code>
+            //@ts-ignore
+            <SyntaxHighlighter
+              {...rest}
+              PreTag="div"
+              children={String(children).replace(/\n$/, "")}
+              codeTagProps={{ style: { fontSize: "14px" } }}
+              showLineNumbers
+              style={a11yDark}
+            />
           );
         },
       }}
@@ -120,13 +139,14 @@ function ChatItemOriginal({ system = false, text }: ChatItemProps) {
   );
 }
 
+const TEXT_INPUT_HEIGHT = 60;
 const ChatItem = memo(ChatItemOriginal);
 
 const generateFullInitialPrompt = (text: string) => {
   if (!text.trim().endsWith(".")) {
     text = `${text}.`;
   }
-  return `Generate full code for a web app based on the following request: ${text} I don't want a basic example. I need full implementation. I need following rules must be followed while generating the code. First line of the code in each code file should be a comment specifying relative path of the file. I need contents of each code file should formatted within a separate fenced code blocks. The code must be in Javascript language. Prefer using React.js when its suitable. If its easier and very simple, use plain javascript. Definitely provide package.json without any comments and scripts attribute. I am using parcel bundler to run. ${templateDescriptions} If I ask for any changes after you provided me initial code,its VERY IMPORTANT that you MUST PROVIDE THE FULL CODE OF THE FILE, ONLY WHICH ARE GETTING CHANGED, WITH UPDATED CODE instead of referring the existing code with comments. DO NOT provide the code unless the content is changing. When suggesting additional dependencies, definitely provide full package.json again with updated dependencies. Because nobody is going to read the comments and copy paste the previous code, since this is an automated system.`;
+  return `You are an experienced web developer. Generate full code for a web app based on the following request: ${text} I don't want a basic example. I need full implementation. I need following rules must be followed while generating the code. First line of the code in each code file should be a comment specifying relative path of the file. I need contents of each code file should formatted within a separate fenced code blocks. The code must be in Javascript language. Prefer using React.js when its suitable. If its easier and very simple, use plain javascript. You MUST PROVIDE package.json always, without any scripts attribute. I am using parcel bundler to run. ${templateDescriptions} If I ask for any changes after you provided me initial code,its VERY IMPORTANT that you MUST PROVIDE THE FULL CODE OF THE FILE, ONLY WHICH ARE GETTING CHANGED, WITH UPDATED CODE instead of referring the existing code with comments. DO NOT provide the code unless the content is changing. When suggesting additional dependencies, definitely provide full package.json again with updated dependencies. Because nobody is going to read the comments and copy paste the previous code, since this is an automated system.`;
 };
 
 function CustomSandpackBehaviour({
@@ -156,18 +176,12 @@ function CustomSandpackBehaviour({
   useEffect(() => {
     const { current: codes } = codesRef;
     const findIndexForMessageToChange = () => {
-      console.log('messages',messages,'active code',codes[activeFile]);
       for (let i = messages.length - 1; i >= 0; i--) {
         const message = messages[i];
         const parsed = fromMarkdown(message.content as string);
         const index = parsed.children?.findIndex((node: any) => {
           if (node.type === "code" && node.value === codes[activeFile]) {
             return true;
-          } else{
-            if(node?.value?.startsWith("// ./App.js")){
-              console.log('node value',node.value);
-              console.log('active value',codes[activeFile]);
-            }
           }
         });
         if (index > -1) {
@@ -181,7 +195,7 @@ function CustomSandpackBehaviour({
     if (codes[activeFile] && activeCode && codes[activeFile] !== activeCode) {
       const [messageIndex, oldIndexOfTheCode, parsed] =
         findIndexForMessageToChange();
-      console.log('index props',{messageIndex,oldIndexOfTheCode,parsed});
+      console.log("index props", { messageIndex, oldIndexOfTheCode, parsed });
       if (oldIndexOfTheCode > -1 && messageIndex > -1 && parsed) {
         //@ts-ignore
         parsed.children[oldIndexOfTheCode].value = activeCode;
@@ -195,7 +209,13 @@ function CustomSandpackBehaviour({
             messageToUpdate.content = toMarkdown(parsed);
             LocalDb.updateMessage(messageToUpdate.id!, {
               content: toMarkdown(parsed),
-            });
+            })
+              .then((v) => {
+                console.log("message updated", v);
+              })
+              .catch((e) => {
+                console.warn("error updating message e", e);
+              });
           }
 
           return newMessages;
@@ -217,7 +237,7 @@ function CustomSandpackBehaviour({
 
   useEffect(() => {
     const cleanup = listen((e) => {
-      // console.warn('got message from csb:::::',e);
+      console.log("got message from csb:::::", e);
       if (e.type === "console" && e?.log?.[0]?.method === "error") {
         console.warn(e.log[0].data);
       }
@@ -229,16 +249,45 @@ function CustomSandpackBehaviour({
   return null;
 }
 
-const SESSION_ID_KEY = "CHAT_CODE_SESSION_ID";
+const fileExlorerStyle = { paddingTop: "40px" };
+
+function getMessageFromError(error: any) {
+  if (error?.message) {
+    return error.message;
+  } else {
+    return `${error}`;
+  }
+}
+
+function codesWithPackageJson(codes: Record<string, string>) {
+  if (!codes["/package.json"]) {
+    codes = {
+      ...codes,
+      ["/package.json"]: JSON.stringify({
+        main: "index.js",
+        dependencies: { react: "^17.0.2", "react-dom": "^17.0.2" },
+      }),
+    };
+  }
+  return codes;
+}
 
 function ChatCode() {
   const [currentPrompt, setCurrentPrompt] = useState("");
   const [initialprompt, setInitialPrompt] = useState("");
   const [codes, setCodes] = useState<Record<string, string>>({});
+  const [expandCode, setExpandCode] = useState(false);
   const codesRef = useRef<Record<string, string>>({});
   const [messages, setMessages] = useState<
     (OpenAI.ChatCompletionMessageParam & { id?: string })[]
   >([]);
+  const [model, setModel] = useState<Models>("gpt-3.5-turbo");
+
+  const {
+    isOpen: isDrawerOpen,
+    onOpen: onDrawerOpen,
+    onClose: onDrawerClose,
+  } = useDisclosure();
 
   const [generating, setGenerating] = useState(false);
   const srcollContainer = useRef<HTMLDivElement>(null);
@@ -247,20 +296,17 @@ function ChatCode() {
     useResizeObserver();
   const lastParsedMarkDownRef = useRef<any>(null);
 
-  useEffect(() => {
-    const sessionId = sessionStorage[SESSION_ID_KEY];
-    if (sessionId) {
-      LocalDb.getSession(sessionId).then((result) => {
-        if (result) {
-          const { initialPrompt, messages, codes } = result;
-          setInitialPrompt(initialPrompt);
-          setMessages(messages);
-          setCodes(codes);
-          codesRef.current = codes;
-        }
-      });
-    }
-  }, []);
+  const reset = () => {
+    sessionStorage.removeItem(SESSION_ID_KEY);
+    setCurrentPrompt("");
+    setInitialPrompt("");
+    setCodes({});
+    setExpandCode(false);
+    codesRef.current = {};
+    setMessages([]);
+    setGenerating(false);
+    lastParsedMarkDownRef.current = null;
+  };
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -270,6 +316,32 @@ function ChatCode() {
       }
     }, 50);
   };
+
+  const loadSession = (sessionId: string) => {
+    LocalDb.getSession(sessionId).then((result) => {
+      if (result) {
+        const { initialPrompt, messages, codes } = result;
+        setInitialPrompt(initialPrompt);
+        setMessages(messages);
+        setCodes(codes);
+        codesRef.current = codes;
+        setExpandCode(false);
+        scrollToBottom();
+      }
+    });
+  };
+
+  useEffect(() => {
+    const sessionId = sessionStorage[SESSION_ID_KEY];
+    if (sessionId) {
+      loadSession(sessionId);
+    }
+  }, []);
+
+  const toast = useToast({
+    position: "top",
+    containerStyle: { marginTop: 100 },
+  });
 
   // console.log('messages',messages);
   const submitText = async (text: string) => {
@@ -297,7 +369,7 @@ function ChatCode() {
 
     // console.log("messages before calling", messages);
     callModelWithStreaming({
-      model: "gpt-3.5-turbo-1106",
+      model: model,
       // model: "gpt-4-1106-preview",
       //@ts-ignore
       messages: messagesToSend.map((x) => omit(x, "id")),
@@ -319,10 +391,10 @@ function ChatCode() {
         const { codeBlocks: codeFiles, parsedMarkdown } =
           parseCodeFromMarkDown(fullMessage);
         lastParsedMarkDownRef.current = parsedMarkdown;
-        console.log("got codefiles", codeFiles);
+        // console.log("got codefiles", codeFiles);
         let newCodes: Record<string, string> = {};
         for (const codeFile of codeFiles) {
-          if (codeFile.lang && codeFile.path) {
+          if (codeFile.path) {
             newCodes[`/${codeFile.path}`] = codeFile.text;
           }
         }
@@ -336,6 +408,17 @@ function ChatCode() {
 
         await LocalDb.setCodesForSession({ ...codesRef.current }, sessionId);
       },
+      onError: (error) => {
+        setGenerating(false);
+        console.log("got error", { error });
+        toast({
+          duration: 10000,
+          title: "Got Error",
+          status: "error",
+          description: getMessageFromError(error),
+          isClosable: true,
+        });
+      },
     });
   };
 
@@ -344,100 +427,198 @@ function ChatCode() {
   }, [codes]);
 
   return (
-    <Container height="100vh" maxW="container.2xl">
-      <Grid
-        width="100%"
-        height="100%"
-        pt={2}
-        pb={15}
-        gap={2}
-        templateRows={"1fr 35px"}
-        templateColumns={"1fr 1fr"}
-        templateAreas={`"messages preview"
+    <>
+      <AcceptOpenAIKeyModal
+        model={model}
+        onChangeModel={(m) => {
+          setModel(m);
+        }}
+      />
+      <Container height="100vh" maxW="container.2xl">
+        <Grid
+          width="100%"
+          height="100%"
+          pt={2}
+          pb={15}
+          gap={2}
+          position="relative"
+          templateRows={`1fr ${TEXT_INPUT_HEIGHT}px`}
+          templateColumns={"1fr 1fr"}
+          templateAreas={`"${expandCode ? "preview" : "messages"} preview"
         "bottomTextInput bottomTextInput"
         `}
-      >
-        <GridItem
-          height="100%"
-          overflowY="auto"
-          area="messages"
-          ref={srcollContainer}
         >
-          <Flex
-            width="100%"
-            minHeight="100%"
-            pt={50}
-            flexDir="column"
-            justifyContent="flex-end"
+          <ButtonGroup
+            top="5px"
+            position="absolute"
+            zIndex={2}
+            isAttached
+            variant="solid"
           >
-            <ChatItem
-              key="system-first-message"
-              system
-              text="Describe the web app you need me to write. I will try my best"
-            />
-            {initialprompt ? <ChatItem text={initialprompt} /> : null}
-            {messages.slice(1).map((msg, index) => (
-              <ChatItem
-                key={msg.id || index}
-                text={msg.content as string}
-                system={msg.role === "assistant" || msg.role === "system"}
-              />
-            ))}
-          </Flex>
-        </GridItem>
-        <GridItem bg={"green.300"} area="preview" ref={contentItemref}>
-          {isCodePresent ? (
-            <SandpackProvider theme="dark" files={codes} template="vanilla">
-              <SandpackLayout
-                style={{ "--sp-layout-height": contentItemHeight } as any}
-              >
-                {/* <SandpackFileExplorer /> */}
-                <SandpackCodeEditor
-                  showTabs
-                  showLineNumbers
-                  showInlineErrors
-                  wrapContent
-                />
-
-                <SandpackPreview showSandpackErrorOverlay={false} />
-              </SandpackLayout>
-              <CustomSandpackBehaviour
-                messages={messages}
-                setMessages={setMessages}
-                codesRef={codesRef}
-                lastParsedMarkDownRef={lastParsedMarkDownRef}
-              />
-            </SandpackProvider>
-          ) : null}
-        </GridItem>
-        <GridItem area="bottomTextInput">
-          <InputGroup>
-            <Textarea
-              borderWidth={2}
-              placeholder="Enter your request"
-              value={currentPrompt}
-              height="full"
-              onChange={(e) => {
-                setCurrentPrompt(e.target.value);
+            <Button
+              colorScheme="twitter"
+              leftIcon={<Menu boxSize="2em" />}
+              onClick={() => onDrawerOpen()}
+            >
+              Previous Sessions
+            </Button>
+            <Button
+              colorScheme="teal"
+              onClick={() => {
+                reset();
               }}
-              disabled={generating}
-            ></Textarea>
-            <InputRightElement height="full" width="4.5rem">
-              <Button
-                borderLeftRadius={0}
-                size="md"
-                height="full"
-                colorScheme="teal"
-                onClick={() => submitText(currentPrompt)}
-                isLoading={generating}
+              leftIcon={<NewPaper boxSize="2em" />}
+            >
+              New Session
+            </Button>
+            <Button paddingInlineStart={0} paddingInlineEnd={0}>
+              <Select
+                value={model}
+                onChange={(e) => {
+                  setModel(e.target.value as Models);
+                }}
               >
-                submit
-              </Button>
-            </InputRightElement>
-          </InputGroup>
-        </GridItem>
-      </Grid>
-    </Container>
+                {MODELS.map((m) => (
+                  <option key={m}>{m}</option>
+                ))}
+              </Select>
+            </Button>
+            <KeyUpdateDialog />
+          </ButtonGroup>
+
+          <GridItem
+            height="100%"
+            overflowY="auto"
+            area="messages"
+            ref={srcollContainer}
+            display={expandCode ? "none" : "block"}
+          >
+            <Flex
+              width="100%"
+              minHeight="100%"
+              pt={50}
+              flexDir="column"
+              justifyContent="flex-end"
+            >
+              <ChatItem
+                key="system-first-message"
+                system
+                text="Describe the web app you need me to write. I will try my best"
+              />
+              {initialprompt ? <ChatItem text={initialprompt} /> : null}
+              {messages.slice(1).map((msg, index) => (
+                <ChatItem
+                  key={msg.id || index}
+                  text={msg.content as string}
+                  system={msg.role === "assistant" || msg.role === "system"}
+                />
+              ))}
+            </Flex>
+          </GridItem>
+
+          <GridItem
+            bg={"green.300"}
+            area="preview"
+            ref={contentItemref}
+            position="relative"
+          >
+            {isCodePresent ? (
+              <>
+                <IconButton
+                  position="absolute"
+                  left={"-24px"}
+                  isRound
+                  top="calc( ((100vh - 90px)/2) + 24px)"
+                  zIndex={2}
+                  size="lg"
+                  onClick={() => setExpandCode((v) => !v)}
+                  colorScheme="teal"
+                  aria-label={expandCode ? "Show Chat" : "Expand Code Editor"}
+                  title={expandCode ? "Show Chat" : "Expand Code Editor"}
+                  icon={expandCode ? <ExpandRight /> : <ExpandLeft />}
+                />
+                <SandpackProvider
+                  theme="dark"
+                  files={codesWithPackageJson(codes)}
+                  template="vanilla"
+                >
+                  <SandpackLayout
+                    style={{ "--sp-layout-height": contentItemHeight } as any}
+                  >
+                    {expandCode ? (
+                      <SandpackFileExplorer style={fileExlorerStyle} />
+                    ) : null}
+                    <SandpackCodeEditor
+                      showTabs
+                      showLineNumbers
+                      showInlineErrors
+                      wrapContent
+                    />
+
+                    <SandpackPreview showSandpackErrorOverlay={false} />
+                  </SandpackLayout>
+                  <CustomSandpackBehaviour
+                    messages={messages}
+                    setMessages={setMessages}
+                    codesRef={codesRef}
+                    lastParsedMarkDownRef={lastParsedMarkDownRef}
+                  />
+                </SandpackProvider>
+              </>
+            ) : null}
+          </GridItem>
+          <GridItem
+            area="bottomTextInput"
+            as="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitText(currentPrompt);
+            }}
+          >
+            <InputGroup marginBottom="10px">
+              <Textarea
+                textOverflow="wrap"
+                borderWidth={2}
+                width="calc(100% - 71px)"
+                placeholder="Enter your request"
+                value={currentPrompt}
+                height={`${TEXT_INPUT_HEIGHT}px`}
+                minHeight={`${TEXT_INPUT_HEIGHT}px`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitText(currentPrompt);
+                  }
+                }}
+                onChange={(e) => {
+                  setCurrentPrompt(e.target.value);
+                }}
+                disabled={generating}
+              />
+              <InputRightElement height="full" width="4.5rem">
+                <Button
+                  borderLeftRadius={0}
+                  size="md"
+                  height={`${TEXT_INPUT_HEIGHT}px`}
+                  colorScheme="teal"
+                  type="submit"
+                  isLoading={generating}
+                >
+                  submit
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+          </GridItem>
+        </Grid>
+      </Container>
+      <OlderSessionsDrawer
+        reset={reset}
+        loadSession={loadSession}
+        placement="left"
+        isOpen={isDrawerOpen}
+        onClose={onDrawerClose}
+      />
+    </>
   );
 }
 

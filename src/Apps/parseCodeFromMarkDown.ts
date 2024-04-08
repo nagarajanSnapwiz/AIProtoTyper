@@ -43,6 +43,11 @@ function isValidJson(text: string){
   }
 }
 
+
+const langFromExtension = (ext: string) => {
+  
+};
+
 export function parseCodeFromMarkDown(markdownText: string) {
   const parsedItems = mdParse.lexer(markdownText);
   window.__parsedLast = parsedItems;

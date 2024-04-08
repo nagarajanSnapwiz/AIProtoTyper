@@ -1,10 +1,12 @@
 import Dexie from "dexie";
+import { nanoid } from "nanoid";
+import TimeAgo from "javascript-time-ago";
 
-let idCount = 0;
-const getId = () => {
-  idCount = idCount + 1;
-  return `incId:${idCount}`;
-};
+// English.
+import en from "javascript-time-ago/locale/en";
+
+TimeAgo.addDefaultLocale(en);
+const timeAgo = new TimeAgo("en-US");
 
 const DB_NAME = "CodeChatLocalStore";
 const SESSIONS = "sessions";
@@ -28,8 +30,16 @@ db.version(1).stores({
   `,
 });
 
+export const SESSION_ID_KEY = "CHAT_CODE_SESSION_ID";
+
+export const deleteSession = async (sessionId: string) => {
+  await db.table(SESSIONS).delete(sessionId);
+  await db.table(MESSAGES).where("sessionId").equals(sessionId).delete();
+  await db.table(CODES).delete(sessionId);
+}
+
 export const addSession = async (initialPrompt: string) => {
-  const sessionId = getId();
+  const sessionId = nanoid();
   await db.table(SESSIONS).add({
     title: initialPrompt,
     initialPrompt,
@@ -40,9 +50,23 @@ export const addSession = async (initialPrompt: string) => {
   return sessionId;
 };
 
+export const getSessions = async () => {
+  const sessionRows = await db
+    .table(SESSIONS)
+    .orderBy("updatedOn")
+    .reverse()
+    .toArray();
+  return sessionRows.map(({ title, id, updatedOn }) => ({
+    title,
+    id,
+    updatedOn,
+    when: timeAgo.format(new Date(updatedOn)),
+  }));
+};
+
 export const addMessage = async (message: any, sessionId: string) => {
-  const id = message.id||getId();
-  message = {...message,id};
+  const id = message.id || nanoid();
+  message = { ...message, id };
   return Promise.all([
     db.table(MESSAGES).add({ ...message, sessionId, createdOn: Date.now() }),
     db.table(SESSIONS).update(sessionId, { updatedOn: Date.now() }),
@@ -57,8 +81,14 @@ export const setCodesForSession = async (
 };
 
 export const updateMessage = (id: string, update: any) => {
-  return db.table(MESSAGES).update(id,update);
-}
+  return db
+    .table(MESSAGES)
+    .where("id")
+    .equals(id)
+    .modify((obj) => {
+      Object.assign(obj, update);
+    });
+};
 
 // export const addMessages = async (messages: any[], sessionId: string) => {
 //   return Promise.all([
@@ -95,5 +125,7 @@ export const getSession = async (sessionId: string) => {
 
   console.log("codes", codesResult);
 
-  return { initialPrompt, messages, codes:  codesResult?.codes||{} };
+  return { initialPrompt, messages, codes: codesResult?.codes || {} };
 };
+
+(window as any).__db = db;

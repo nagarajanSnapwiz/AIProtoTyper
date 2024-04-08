@@ -1,23 +1,15 @@
 import OpenAI from "openai";
 import { extractDataWithPrompt } from "chatgpt-helper/src/index";
 import { z } from "zod";
+import { Models,LOCAL_STORAGE_OPEN_AI_KEY } from './constants';
 
-import {parse as mdParse} from 'marked';
+import { parse as mdParse } from "marked";
 
-(window as any).__mdParse = mdParse; 
+(window as any).__mdParse = mdParse;
 
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OP_KEY,
-  dangerouslyAllowBrowser: true,
-});
 
-type Models =
-  | "gpt-4-1106-preview"
-  | "gpt-4-1106-vision-preview"
-  | "gpt-4"
-  | "gpt-4-32k"
-  | "gpt-3.5-turbo-1106"
-  | "gpt-3.5-turbo-instruct";
+
+
 
 type CallParams = {
   text: string;
@@ -26,9 +18,10 @@ type CallParams = {
   messages?: OpenAI.ChatCompletionMessageParam[];
 };
 
-type CallParamsStreaming = Omit<CallParams,"text"> & {
-  setState: (v: string,id: string) => void;
+type CallParamsStreaming = Omit<CallParams, "text"> & {
+  setState: (v: string, id: string) => void;
   onComplete?: (c: string, id: string) => void;
+  onError?: (error: any) => void;
   text?: string;
 };
 
@@ -86,46 +79,57 @@ export async function callModelWithStreaming({
   text,
   model = "gpt-3.5-turbo-1106",
   image,
-  messages=[],
+  messages = [],
   setState,
   onComplete,
+  onError,
 }: CallParamsStreaming) {
-  let messagesToSend = [...messages];
-  if(image && text){
-    messagesToSend.push({
-      role: "user",
-      content: [
-        {type: "text", text},
-        {type:"image_url", image_url: {url: image}}
-      ]
+  try {
+    const openai = new OpenAI({
+      apiKey: localStorage[LOCAL_STORAGE_OPEN_AI_KEY],
+      dangerouslyAllowBrowser: true,
     });
-  } else if(text){
-    messagesToSend.push({role:"user", content: text});
-  } else if(image){
-    messagesToSend.push({
-      role: "user",
-      content: [
-        {type:"image_url", image_url: {url: image}}
-      ]
-    });
-  }
-  const completion = await openai.chat.completions.create({
-    messages: messagesToSend,
-    model: image ? "gpt-4-vision-preview" : model,
-    stream: true,
-  });
-  let content = "";
-  let messageId = null;
-  for await (const chunk of completion) {
-    content += chunk.choices[0]?.delta?.content || "";
-    if(chunk.choices[0].finish_reason){
-      console.log("finish reason",chunk.choices[0].finish_reason);
+    let messagesToSend = [...messages];
+    if (image && text) {
+      messagesToSend.push({
+        role: "user",
+        content: [
+          { type: "text", text },
+          { type: "image_url", image_url: { url: image } },
+        ],
+      });
+    } else if (text) {
+      messagesToSend.push({ role: "user", content: text });
+    } else if (image) {
+      messagesToSend.push({
+        role: "user",
+        content: [{ type: "image_url", image_url: { url: image } }],
+      });
     }
-    messageId = chunk.id;
-    setState(content,chunk.id);
-  }
-  if (onComplete) {
-    (window as any).__lastContent = content;
-    onComplete(content, messageId!);
+
+    const completion = await openai.chat.completions.create({
+      messages: messagesToSend,
+      model: image ? "gpt-4-vision-preview" : model,
+      stream: true,
+      temperature: 0.8,
+    });
+    let content = "";
+    let messageId = null;
+    for await (const chunk of completion) {
+      content += chunk.choices[0]?.delta?.content || "";
+      if (chunk.choices[0].finish_reason) {
+        console.log("finish reason", chunk.choices[0].finish_reason);
+      }
+      messageId = chunk.id;
+      setState(content, chunk.id);
+    }
+    if (onComplete) {
+      (window as any).__lastContent = content;
+      onComplete(content, messageId!);
+    }
+  } catch (error) {
+    if (onError) {
+      onError(error);
+    }
   }
 }
