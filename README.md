@@ -1,30 +1,11 @@
-# React + TypeScript + Vite
+# AI Proto Typer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Simple tool to create and refine web app prototypes
 
-Currently, two official plugins are available:
+Use your own OpenAI API key. No server needed
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
-
-- Configure the top-level `parserOptions` property like this:
-
-```js
-export default {
-  // other rules...
-  parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
-    project: ['./tsconfig.json', './tsconfig.node.json'],
-    tsconfigRootDir: __dirname,
-  },
-}
-```
-
-- Replace `plugin:@typescript-eslint/recommended` to `plugin:@typescript-eslint/recommended-type-checked` or `plugin:@typescript-eslint/strict-type-checked`
-- Optionally add `plugin:@typescript-eslint/stylistic-type-checked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and add `plugin:react/recommended` & `plugin:react/jsx-runtime` to the `extends` list
+## Key features
+  - Instantly preview the app created
+  - Option to fix/modify the generated code by model and live preview
+  - Option to manually intervene and update the code. The updated code becomes the response provided by the model. So that for next iteration of changes provided by the model would include manually made change
+  - Offline storage of the chat sessions and code generated
